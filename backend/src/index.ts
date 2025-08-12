@@ -31,10 +31,18 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(passport.initialize());
 
+// Support multiple allowed origins via comma-separated FRONTEND_ORIGIN
+const allowedOrigins = (Env.FRONTEND_ORIGIN || "").split(",").map((o) => o.trim()).filter(Boolean);
 app.use(
   cors({
-    origin: Env.FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow non-browser clients or same-origin
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
     credentials: true,
+    optionsSuccessStatus: 200,
   })
 );
 
