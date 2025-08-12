@@ -47,6 +47,8 @@ import {
   useUpdateTransactionMutation,
 } from "@/features/transaction/transactionAPI";
 import { toast } from "sonner";
+import { useAppDispatch } from "@/app/hook";
+import { apiClient } from "@/app/api-client";
 
 const formSchema = z.object({
   title: z.string().min(2, { message: "Title must be at least 2 characters." }),
@@ -85,6 +87,7 @@ const TransactionForm = (props: {
   const { onCloseDrawer, isEdit = false, transactionId } = props;
 
   const [isScanning, setIsScanning] = useState(false);
+  const dispatch = useAppDispatch();
 
   const { data, isLoading } = useGetSingleTransactionQuery(
     transactionId || "",
@@ -175,6 +178,8 @@ const TransactionForm = (props: {
         .then(() => {
           onCloseDrawer?.();
           toast.success("Transaction updated successfully");
+          // Force-refresh analytics after an update
+          dispatch(apiClient.util.invalidateTags(["analytics"]));
         })
         .catch((error) => {
           toast.error(error.data.message || "Failed to update transaction");
@@ -187,6 +192,8 @@ const TransactionForm = (props: {
         form.reset();
         onCloseDrawer?.();
         toast.success("Transaction created successfully");
+        // Force-refresh analytics after create to ensure Overview updates instantly
+        dispatch(apiClient.util.invalidateTags(["analytics"]));
       })
       .catch((error) => {
         toast.error(error.data.message || "Failed to create transaction");

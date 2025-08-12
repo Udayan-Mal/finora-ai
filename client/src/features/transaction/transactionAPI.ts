@@ -68,7 +68,7 @@ export const transactionApi = apiClient.injectEndpoints({
         url: `/transaction/duplicate/${id}`,
         method: "PUT",
       }),
-      invalidatesTags: ["transactions"],
+  invalidatesTags: ["transactions", "analytics"],
     }),
 
     updateTransaction: builder.mutation<void, UpdateTransactionPayload>({
@@ -77,7 +77,7 @@ export const transactionApi = apiClient.injectEndpoints({
         method: "PUT",
         body: transaction,
       }),
-      invalidatesTags: ["transactions"],
+  invalidatesTags: ["transactions", "analytics"],
     }),
 
     bulkImportTransaction: builder.mutation<void, BulkImportTransactionPayload>(
@@ -87,7 +87,7 @@ export const transactionApi = apiClient.injectEndpoints({
           method: "POST",
           body,
         }),
-        invalidatesTags: ["transactions"],
+  invalidatesTags: ["transactions", "analytics"],
       }
     ),
 
