@@ -193,13 +193,6 @@ Tips:
 
 ---
 
-## License
 
-This code is free for personal use. A commercial license is required for business use.
-
-- License details: [TECHWITHEMMA-LICENSE.md](./TECHWITHEMMA-LICENSE.md)
-- Purchase a license: https://techwithemma.gumroad.com/l/huytmd
-
----
 
 If you have questions or run into setup issues, open an issue with the exact error and your environment (OS, Node version), and we’ll help you get unstuck.
