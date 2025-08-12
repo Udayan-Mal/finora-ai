@@ -41,10 +41,19 @@ app.use(
 app.get(
   "/",
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    throw new BadRequestException("This is a test error");
+    // Simple welcome route for root path
     res.status(HTTPSTATUS.OK).json({
-      message: "Hello, welcome to the AI Finance SaaS API!",
+      message: "Welcome to the Finora AI Finance SaaS API",
+      basePath: BASE_PATH,
     });
+  })
+);
+
+// Lightweight health check for uptime monitors and Render
+app.get(
+  `${BASE_PATH}/health`,
+  asyncHandler(async (req: Request, res: Response) => {
+    res.status(HTTPSTATUS.OK).json({ status: "ok" });
   })
 );
 
