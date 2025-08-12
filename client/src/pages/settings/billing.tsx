@@ -1,4 +1,6 @@
 import { Separator } from "@/components/ui/separator";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useUpgradeToProSubscriptionMutation, useManageSubscriptionBillingPortalMutation, useSwitchToSubscriptionPlanMutation } from "@/features/billing/billingAPI";
 import { PROTECTED_ROUTES } from "@/routes/common/routePath";
 import { useSearchParams } from "react-router-dom";
@@ -7,7 +9,7 @@ import { PLAN_TYPE, PLANS } from "@/constant/plan.constant";
 import { useState, useMemo, useEffect } from "react";
 // import { BillingPlanCard } from "@/components/BillingPlanCard";
 // import BillingSkeleton from "@/components/skeletons/BillingSkeleton";
-import { toast } from "react-toastify";
+import { toast } from "sonner";
 // ...existing code...
 import { AppAlert } from "@/components/app-alert";
 import BillingPlanCard from "./_components/billing-plan-card";
@@ -26,6 +28,8 @@ const Billing = () => {
   const [manageSubscriptionBillingPortal, { isLoading: billingPortalLoading }] = useManageSubscriptionBillingPortalMutation();
 
   const [switchToSubscriptionPlan, { isLoading: switchPlanLoading }] = useSwitchToSubscriptionPlanMutation();
+  // Track a pending plan switch so we can poll until Stripe confirms
+  const [pendingPlan, setPendingPlan] = useState<PLAN_TYPE | null>(null);
 
   const { data, isFetching, refetch } = useGetUserSubscriptionStatusQuery(
     undefined,
@@ -43,17 +47,18 @@ const Billing = () => {
   const isPro = PLAN_LIST.includes(currentPlan as PLAN_TYPE) && status === "active";
   const planData = subscriptionData?.planData;
 
-  const selectedPlanData = isYearly ? planData?.YEARLY : planData?.
-  MONTHLY;
+  const selectedPlanData = isYearly ? planData?.YEARLY : planData?.MONTHLY;
 
   useEffect(() => {
     if (isSuccess === "true") {
-      toast.success("You have successfully subscribe to Finora pro plan");
+      toast.success("You have successfully subscribed to Finora Pro");
+      // Ensure UI reflects paid state immediately
+      refetch();
     }
     if (isSuccess === "false") {
-      toast.error("Failed to subscribe to Finora pro plan");
+      toast.error("Subscription was canceled");
     }
-  }, [isSuccess]);
+  }, [isSuccess, refetch]);
 
   const alertProps = useMemo(() => {
     if (isPro && status === "active") {
@@ -99,7 +104,7 @@ const Billing = () => {
     }
 
     return {
-      title: "Subscription status Unknow",
+      title: "Subscription status Unknown",
       variant: "warning" as const,
       message: "We couldn't determine your subscription status",
     };
@@ -117,7 +122,7 @@ const Billing = () => {
         })
         .catch((err) => {
           toast.error(
-            err?.data?.message || "Failed to upgrad subscription, Trey again"
+            err?.data?.message || "Failed to upgrade subscription. Try again."
           );
         });
     } else if (currentPlan !== (isYearly ? PLANS.YEARLY : PLANS.MONTHLY)) {
@@ -154,16 +159,37 @@ const Billing = () => {
     })
       .unwrap()
       .then((res) => {
-        setTimeout(() => {
-          refetch();
-        }, 1500);
-        toast.success(`${res.message}, please reload the page`);
+        // Start polling for up to ~30s until plan flips
+        setPendingPlan(targetPlan as PLAN_TYPE);
+        toast.success(res.message);
+        pollForPlan(targetPlan as PLAN_TYPE);
       })
       .catch((err) => {
         toast.error(
           err?.data?.message || "Failed to switch subscription"
         );
       });
+  };
+
+  // Poll helper: refetch status every 2s up to 15 attempts or until plan matches
+  const pollForPlan = async (target: PLAN_TYPE) => {
+    let attempts = 0;
+    while (attempts < 15) {
+      attempts++;
+      const result = await refetch();
+      const latest = result?.data as typeof data | undefined;
+      const plan = latest?.data?.currentPlan;
+      const status = latest?.data?.status;
+      if (plan === target && status === "active") {
+        toast.success(`Switched to ${target} plan`);
+        setPendingPlan(null);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    // Give a gentle nudge if still processing
+    setPendingPlan(null);
+    toast.info("Plan switch is processing. It will update shortly.");
   };
 
   return (
@@ -190,7 +216,12 @@ const Billing = () => {
             <BillingPlanCard
               selectedPlan={selectedPlanData}
               isYearly={isYearly}
-              isLoading={upgradeLoading || billingPortalLoading || switchPlanLoading}
+              isLoading={
+                upgradeLoading ||
+                billingPortalLoading ||
+                switchPlanLoading ||
+                Boolean(pendingPlan)
+              }
               isPro={isPro || false}
               currentPlanType={currentPlan as PLAN_TYPE}
               onPlanChange={setIsYearly}
@@ -204,7 +235,25 @@ const Billing = () => {
 };
 
 const BillingSkeleton = () => {
-  return <></>;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <Skeleton className="h-6 w-40" />
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-8 w-48" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-[90%]" />
+          <Skeleton className="h-4 w-[80%]" />
+        </div>
+        <Skeleton className="h-10 w-full" />
+      </CardContent>
+    </Card>
+  );
 };
 
 export default Billing;

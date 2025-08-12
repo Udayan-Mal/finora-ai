@@ -17,9 +17,9 @@ import SubscriptionModel, {
 } from "../models/subscription.model";
 
 const TRIAL_DAYS = Number(Env.TRIAL_DAYS);
+// Keep a reusable trial end timestamp for local trial records (no Stripe call needed)
 const trialEndDate =
-  Math.floor(Date.now() / 1000) +
-  TRIAL_DAYS * 24 * 60 * 60; // Now + TRIAL_DAYS in seconds
+  Math.floor(Date.now() / 1000) + TRIAL_DAYS * 24 * 60 * 60; // Now + TRIAL_DAYS in seconds
 
 export const registerService = async (body: RegisterSchemaType) => {
   const { email } = body;
@@ -43,26 +43,10 @@ export const registerService = async (body: RegisterSchemaType) => {
       newUser.stripeCustomerId = customer.id;
       await newUser.save({ session });
 
-      const _userId = newUser.id.toString();
+  const _userId = newUser.id.toString();
 
-      // const ONE_MINUTES_IN_SECONDS = 1 * 60; // 1 minutes
-      // const trialEndDate =
-      //   Math.floor(Date.now() / 1000) +
-      //   ONE_MINUTES_IN_SECONDS;
-
-      const stripeSubscription = await stripeClient.subscriptions.create({
-        customer: customer.id,
-        items: [{ price: Env.STRIPE_MONTHLY_PLAN_PRICE_ID }],
-
-        trial_end: trialEndDate,
-        // trial_period_days: TRIAL_DAYS,
-        trial_settings: {
-          end_behavior: { missing_payment_method: "cancel" },
-        },
-        metadata: {
-          userId: _userId,
-        },
-      });
+  // IMPORTANT: Do not create a Stripe subscription on signup.
+  // We maintain a local trial only. The paid subscription is created via Checkout later.
 
       const reportSetting = new ReportSettingModel({
         userId: newUser._id,
@@ -77,10 +61,11 @@ export const registerService = async (body: RegisterSchemaType) => {
         userId: newUser._id,
         status: SubscriptionStatus.TRIALING,
         plan: null,
-        stripeSubscriptionId: stripeSubscription.id,
-        stripePriceId: stripeSubscription.items.data[0].price.id,
-        trialStartsAt: new Date(stripeSubscription.trial_start! * 1000),
-        trialEndsAt: new Date(stripeSubscription.trial_end! * 1000),
+        // No Stripe subscription yet; user is on a local trial until they checkout
+        stripeSubscriptionId: null,
+        stripePriceId: null,
+        trialStartsAt: new Date(),
+        trialEndsAt: new Date(trialEndDate * 1000),
         trialDays: TRIAL_DAYS,
       });
 

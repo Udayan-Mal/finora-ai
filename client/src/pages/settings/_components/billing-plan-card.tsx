@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { PLAN_TYPE, PLANS } from "@/constant/plan.constant";
 import { cn } from "@/lib/utils";
 import { CheckCircle, Loader } from "lucide-react";
-import { Button as DayPickerButton } from "react-day-picker";
-import { Switch } from "@radix-ui/react-switch";
+import { Switch } from "@/components/ui/switch";
 
 interface SelectedPlan {
   price: string;
@@ -60,6 +59,7 @@ const BillingPlanCard = ({
               checked={isYearly}
               onCheckedChange={onPlanChange}
               aria-label="Toggle Pro Plans"
+              disabled={isLoading}
             />
             <span className="text-sm">Yearly</span>
             {selectedPlan.savings && (

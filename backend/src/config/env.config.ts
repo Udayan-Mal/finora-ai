@@ -28,7 +28,7 @@ STRIPE_YEARLY_PLAN_PRICE_ID: getEnv("STRIPE_YEARLY_PLAN_PRICE_ID"),
 STRIPE_WEBHOOK_SECRET: getEnv("STRIPE_WEBHOOK_SECRET"),
 TRIAL_DAYS: getEnv("TRIAL_DAYS", "7") as string,
 
-  FRONTEND_ORIGIN: getEnv("FRONTEND_ORIGIN", "localhost"),
+  FRONTEND_ORIGIN: getEnv("FRONTEND_ORIGIN", "http://localhost:5173"),
 });
 
 export const Env = envConfig();

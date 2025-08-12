@@ -1,9 +1,9 @@
 import { useTypedSelector } from "@/app/hook";
-import { Navigate, Outlet, useLocation, Link } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { AUTH_ROUTES, PROTECTED_ROUTES } from "./common/routePath";
 import useBillingSubscription from "@/hooks/use-billing-subscription";
 import { PageSkeleton } from "@/components/page-skeleton";
-import { User } from "lucide-react";
+//
 
 const BILLING_PAGE = PROTECTED_ROUTES.SETTINGS_BILLING;
 
@@ -11,23 +11,27 @@ const ProtectedRoute = () => {
   const location = useLocation();
   const { accessToken, user } = useTypedSelector((state) => state.auth);
   const { isSuccess, isLoading, isError, isPro, isTrialActive } = useBillingSubscription(accessToken);
-
-  const SETTINGS_PAGES = [
-    PROTECTED_ROUTES.SETTINGS_APPEARANCE,
-  ];
-
-  console.log("Current path:", location.pathname);
+  const disableBillingGuard = import.meta.env.VITE_DISABLE_BILLING_GUARD === "true";
 
   const isSettingsPage =
-    location.pathname === PROTECTED_ROUTES.SETTINGS_APPEARANCE ||
-    location.pathname.startsWith(PROTECTED_ROUTES.SETTINGS_APPEARANCE + "/");
+    location.pathname === PROTECTED_ROUTES.SETTINGS ||
+    location.pathname.startsWith(PROTECTED_ROUTES.SETTINGS + "/");
 
   if (!accessToken && !user) return <Navigate to={AUTH_ROUTES.SIGN_IN} replace />;
+
+  // Always allow Settings pages to render without waiting for billing fetch
+  if (isSettingsPage) {
+    return <Outlet />;
+  }
+
+  if (disableBillingGuard) {
+    return <Outlet />;
+  }
 
   if (isLoading || !isSuccess) return <PageSkeleton isError={isError} />;
 
   // Allow access if user is pro, on an active trial, or on any settings page
-  if (isPro || isTrialActive || isSettingsPage) {
+  if (isPro || isTrialActive) {
     return <Outlet />;
   }
 
@@ -36,4 +40,3 @@ const ProtectedRoute = () => {
 };
 
 export default ProtectedRoute;
-<Link to="/settings/appearance">Appearance</Link>

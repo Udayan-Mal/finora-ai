@@ -12,7 +12,7 @@ import {
   manageSubscriptionBillingPortalService,
   switchToSubscriptionPlanService,
 } from "../services/billing.service";
-import { date } from "zod";
+// no-op
 
 export const getUserSubscriptionStatusController = asyncHandler(
   async (req: Request, res: Response) => {
@@ -62,9 +62,9 @@ export const switchToSubscriptionPlanController =
       const userId = req.user?._id;
       const body = switchToSubscriptionPlanSchema.parse(req.body);
 
-      // const {} = await switchToSubscriptionPlanService(userId, body);
+  const result = await switchToSubscriptionPlanService(userId, body);
 
-      return res.status(HTTPSTATUS.OK).json({});
+  return res.status(HTTPSTATUS.OK).json(result);
     }
   );
 

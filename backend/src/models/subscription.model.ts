@@ -61,6 +61,12 @@ const subscriptionSchema = new Schema<SubscriptionDocument>({
   },
   trialEndsAt: { type: Date, required: true },
   trialDays: { type: Number, default: Number(process.env.TRIAL_DAYS || 14) },
+  status: {
+    type: String,
+    enum: Object.values(SubscriptionStatus),
+    default: SubscriptionStatus.TRIALING,
+    required: true,
+  },
     plan: {
       type: String,
       enum: Object.values(SubscriptionPlanEnum),

@@ -8,43 +8,93 @@ import { planFeatures } from "../constant/subscription";
 import { upgradeToProSubscriptionSchemaType, switchToSubscriptionPlanSchemaType } from "../validators/billing.validator";
 import { stripeClient } from "../config/stripe.config"; // or wherever you initialize Stripe
 import { Env } from "../config/env.config"; // or your actual env config file
+import SubscriptionModel from "../models/subscription.model";
 
 export const getUserSubscriptionStatusService = async (userId: string) => {
   const user = await UserModel.findById(userId).populate<{
     subscriptionId: SubscriptionDocument;
   }>("subscriptionId");
-  if (!user || !user.subscriptionId) {
-    // Always return a 2-day trial for new users with no subscription
-    const now = new Date();
-    const trialEndsAt = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
-    return {
-      subscriptionData: {
-        isTrialActive: true,
-        currentPlan: null,
-        trialEndsAt,
-        trialDays: 2,
-        status: "trialing",
-        daysLeft: 2,
-        planData: {
-          [SubscriptionPlanEnum.MONTHLY]: {
-            price: convertToDollarUnit(SubscriptionPriceEnum.MONTHLY),
-            billing: "month",
-            savings: null,
-            features: planFeatures[SubscriptionPlanEnum.MONTHLY],
-          },
-          [SubscriptionPlanEnum.YEARLY]: {
-            price: convertToDollarUnit(SubscriptionPriceEnum.YEARLY),
-            billing: "year",
-            savings: "Save 17%",
-            features: planFeatures[SubscriptionPlanEnum.YEARLY],
-          },
-        },
+  if (!user) {
+    throw new NotFoundException("User not found");
+  }
+
+  // Always reconcile from Stripe so plan switches reflect instantly even without webhooks
+  if (user.stripeCustomerId) {
+    try {
+      const subs = await stripeClient.subscriptions.list({
+        customer: user.stripeCustomerId,
+        limit: 10,
+      });
+      const s =
+        subs.data.find((x) => x.status === "active") ||
+        subs.data.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+      if (s) {
+        const price = s.items.data[0]?.price;
+        const priceId = typeof price === "string" ? price : price?.id;
+        const plan = getPlanFromPriceId(priceId as string);
+        const firstItem = s.items.data[0];
+        const update = {
+          userId: user._id,
+          stripeSubscriptionId: s.id,
+          stripePriceId: priceId,
+          plan,
+          stripeCurrentPeriodStart: firstItem?.current_period_start
+            ? new Date(firstItem.current_period_start * 1000)
+            : null,
+          stripeCurrentPeriodEnd: firstItem?.current_period_end
+            ? new Date(firstItem.current_period_end * 1000)
+            : null,
+          status: mapStripeStatus(s.status),
+        } as any;
+
+        const doc = await SubscriptionModel.findOneAndUpdate(
+          { userId: user._id },
+          { $set: update },
+          { upsert: true, new: true }
+        );
+        if (!user.subscriptionId) {
+          user.subscriptionId = doc._id as any;
+          await user.save();
+        }
       }
+    } catch (e) {
+      // Swallow fallback errors so endpoint never 500s
+    }
+  }
+
+  if (!user.subscriptionId) {
+    // Create a temporary trial view without persisting a Stripe subscription
+    const TRIAL_DAYS = Number(Env.TRIAL_DAYS || 7);
+    const now = new Date();
+    const trialEndsAt = new Date(now.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    return {
+      subscriptionData: buildSubscriptionPayload(null, SubscriptionStatus.TRIALING, trialEndsAt, TRIAL_DAYS),
     };
   }
 
-  const subscriptionDoc = user.subscriptionId;
-  const isTrialActive = subscriptionDoc.isTrialActive();
+  // Ensure we use latest subscription from DB after possible upsert
+  const latestSub = await SubscriptionModel.findOne({ userId: user._id }).lean();
+  const subscriptionDoc = (latestSub || (user.subscriptionId as any)) as any;
+  // Backfill missing status for existing records created before schema had 'status'
+  let statusValue = subscriptionDoc.status as any;
+  if (!statusValue) {
+    const nowTs = Date.now();
+    const trialEndTs = subscriptionDoc.trialEndsAt?.getTime() ?? 0;
+    const inferredStatus: SubscriptionStatus = trialEndTs > nowTs
+      ? SubscriptionStatus.TRIALING
+      : SubscriptionStatus.TRIAL_EXPIRED;
+    await SubscriptionModel.updateOne(
+      { _id: (subscriptionDoc as any)._id },
+      { $set: { status: inferredStatus } }
+    );
+    statusValue = inferredStatus;
+  }
+
+  const isTrialActive =
+    statusValue === SubscriptionStatus.TRIALING &&
+    (subscriptionDoc.trialEndsAt
+      ? subscriptionDoc.trialEndsAt.getTime() > Date.now()
+      : false);
 
   const now = new Date();
   const daysLeft =
@@ -58,7 +108,26 @@ export const getUserSubscriptionStatusService = async (userId: string) => {
         )
       : 0;
 
-  const planData = {
+  const planData = buildPlanData();
+
+  const subscriptionData = {
+    isTrialActive,
+    currentPlan: subscriptionDoc.plan,
+    trialEndsAt: subscriptionDoc.trialEndsAt,
+    trialDays: subscriptionDoc.trialDays,
+  status: statusValue,
+    daysLeft: isTrialActive ? daysLeft : 0,
+    planData,
+  };
+
+    return {
+    subscriptionData,
+    
+    };
+};
+
+function buildPlanData() {
+  return {
     [SubscriptionPlanEnum.MONTHLY]: {
       price: convertToDollarUnit(SubscriptionPriceEnum.MONTHLY),
       billing: "month",
@@ -71,23 +140,54 @@ export const getUserSubscriptionStatusService = async (userId: string) => {
       savings: "Save 17%",
       features: planFeatures[SubscriptionPlanEnum.YEARLY],
     },
+  } as const;
+}
+
+function buildSubscriptionPayload(
+  plan: SubscriptionPlanEnum | null,
+  status: SubscriptionStatus,
+  trialEndsAt: Date | null,
+  trialDays: number
+) {
+  const now = new Date();
+  const daysLeft = trialEndsAt
+    ? Math.max(0, Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  return {
+    isTrialActive: status === SubscriptionStatus.TRIALING && daysLeft > 0,
+    currentPlan: plan,
+    trialEndsAt,
+    trialDays,
+    status,
+    daysLeft,
+    planData: buildPlanData(),
   };
+}
 
-  const subscriptionData = {
-  isTrialActive,
-  currentPlan: subscriptionDoc.plan,
-  trialEndsAt: subscriptionDoc.trialEndsAt,
-  trialDays: subscriptionDoc.trialDays,
-  status: subscriptionDoc.status,
-  daysLeft: isTrialActive ? daysLeft : 0,
-  planData,
-};
+function mapStripeStatus(s: string): SubscriptionStatus {
+  switch (s) {
+    case "active":
+      return SubscriptionStatus.ACTIVE;
+    case "trialing":
+      return SubscriptionStatus.TRIALING;
+    case "past_due":
+      return SubscriptionStatus.PAST_DUE;
+    case "canceled":
+      return SubscriptionStatus.CANCELED;
+    case "unpaid":
+      return SubscriptionStatus.PAYMENT_FAILED;
+    default:
+      return SubscriptionStatus.TRIAL_EXPIRED;
+  }
+}
 
-    return {
-    subscriptionData,
-    
-    };
-};
+function getPlanFromPriceId(priceId: string | null | undefined): SubscriptionPlanEnum | null {
+  if (!priceId) return null;
+  if (priceId === Env.STRIPE_MONTHLY_PLAN_PRICE_ID) return SubscriptionPlanEnum.MONTHLY;
+  if (priceId === Env.STRIPE_YEARLY_PLAN_PRICE_ID) return SubscriptionPlanEnum.YEARLY;
+  return null;
+}
 
 export const upgradeToProSubscriptionService = async (
   userId: string,

@@ -18,9 +18,13 @@ import reportRoutes from "./routes/report.route";
 import { getDateRange } from "./utils/date";
 import analyticsRoutes from "./routes/analytics.route";
 import billingRoutes from "./routes/billing.route";
+import webhookRoutes from "./routes/webhook.route";
 
 const app = express();
 const BASE_PATH = Env.BASE_PATH;
+
+// Note: Stripe webhooks need raw body; we mount webhook router before json body parser for that path.
+app.use(`${BASE_PATH}/webhooks`, webhookRoutes);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
